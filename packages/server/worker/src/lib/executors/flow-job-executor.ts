@@ -1,10 +1,11 @@
 import { exceptionHandler, pinoLogging } from '@activepieces/server-shared'
-import { ActivepiecesError, BeginExecuteFlowOperation, ErrorCode, ExecuteFlowJobData, ExecutionType, FlowRunStatus, FlowVersion, isNil, ResumeExecuteFlowOperation, ResumePayload } from '@activepieces/shared'
+import { ActivepiecesError, BeginExecuteFlowOperation, EngineResponseStatus, ErrorCode, ExecuteFlowJobData, ExecutionType, FlowRunStatus, FlowVersion, isNil, ResumeExecuteFlowOperation, ResumePayload, UpdateLogsBehavior } from '@activepieces/shared'
 import { FastifyBaseLogger } from 'fastify'
 import { engineApiService } from '../api/server-api.service'
 import { flowWorkerCache } from '../cache/flow-worker-cache'
 import { engineRunner } from '../runner'
 import { workerMachine } from '../utils/machine'
+import { inspect } from 'util'
 
 type EngineConstants = 'internalApiUrl' | 'publicApiUrl' | 'engineToken'
 
@@ -74,6 +75,7 @@ async function handleMemoryIssueError(jobData: ExecuteFlowJobData, engineToken: 
             tasks: 0,
             tags: [],
         },
+        updateLogsBehavior: UpdateLogsBehavior.NONE,
         executionStateContentLength: null,
         httpRequestId: jobData.httpRequestId,
         progressUpdateType: jobData.progressUpdateType,
@@ -92,6 +94,7 @@ async function handleTimeoutError(jobData: ExecuteFlowJobData, engineToken: stri
             status: FlowRunStatus.TIMEOUT,
         },
         executionStateContentLength: null,
+        updateLogsBehavior: UpdateLogsBehavior.NONE,
         httpRequestId: jobData.httpRequestId,
         progressUpdateType: jobData.progressUpdateType,
         workerHandlerId: jobData.synchronousHandlerId,
@@ -108,6 +111,7 @@ async function handleInternalError(jobData: ExecuteFlowJobData, engineToken: str
             tags: [],
         },
         executionStateContentLength: null,
+        updateLogsBehavior: UpdateLogsBehavior.NONE,
         httpRequestId: jobData.httpRequestId,
         progressUpdateType: jobData.progressUpdateType,
         workerHandlerId: jobData.synchronousHandlerId,
@@ -138,13 +142,13 @@ export const flowJobExecutor = (log: FastifyBaseLogger) => ({
 
 
             const input = await prepareInput(flow.version, jobData, attempsStarted, engineToken, timeoutInSeconds)
-            const { result } = await engineRunner(runLog).executeFlow(engineToken, input)
+            const { result, status } = await engineRunner(runLog).executeFlow(engineToken, input)
 
-            if (result.status === FlowRunStatus.INTERNAL_ERROR) {
+            if (result.status === FlowRunStatus.INTERNAL_ERROR || status === EngineResponseStatus.INTERNAL_ERROR) {
                 throw new ActivepiecesError({
                     code: ErrorCode.ENGINE_OPERATION_FAILURE,
                     params: {
-                        message: result.error?.message ?? 'internal error',
+                        message: JSON.stringify(result),
                     },
                 })
             }
